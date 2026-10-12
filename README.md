@@ -1,28 +1,10 @@
-## Usage
+目的
+	概念実証として、Sigma.jsとSolid.jsで、自動レイアウト機能をもった有向グラフのグラフエディタを作りたい。
+	ノードはすでに10個くらい与えられているものとし、主要な関心はエッジの追加と削除がある。
 
-```bash
-$ npm install # or pnpm install or yarn install
-```
+機能
+	ノードを選択し、Ctrlキーを押したままドラッグし、宛先ノードのところで離すと、ノードと宛先ノードに関係を与えることができる。（別にノードの端を選択してドラッグすることでエッジを設定するのでもいい。簡単なほうで）Sigma.jsの場合Graphology APIを使うと良いかも？
+	エッジはやや太めにして選択しやすくし、Deleteキーで削除することができる。
+	ノードの色は、適当にランダムにつける。
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
 
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm run dev`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:5173](http://localhost:5173) to view it in the browser.
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## Deployment
-
-Learn more about deploying your application with the [documentations](https://vite.dev/guide/static-deploy.html)
