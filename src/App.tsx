@@ -2,7 +2,6 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import Graph from "graphology";
 import Sigma from "sigma";
-import { animateNodes } from "sigma/utils";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 
 const NODE_COUNT = 10;
@@ -20,24 +19,24 @@ export default function App() {
   const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
   const [edgeCount, setEdgeCount] = createSignal(0);
 
-  // Initial nodes with random positions and colors
+  // Initial nodes are placed on a circle so they never overlap
   for (let i = 0; i < NODE_COUNT; i++) {
+    const angle = (2 * Math.PI * i) / NODE_COUNT;
     graph.addNode(`n${i}`, {
       label: `Node ${i}`,
-      x: Math.random(),
-      y: Math.random(),
-      size: 12,
+      x: Math.cos(angle),
+      y: Math.sin(angle),
+      size: 8,
       color: randomColor(),
     });
   }
 
-  // Compute a force-directed layout and animate nodes to the new positions
+  // Compute a force-directed layout and write the positions into the graph
   const relayout = () => {
-    const positions = forceAtlas2(graph, {
+    forceAtlas2.assign(graph, {
       iterations: 300,
       settings: forceAtlas2.inferSettings(graph),
     });
-    animateNodes(graph, positions, { duration: 600 });
   };
 
   const addEdge = (from: string, to: string) => {
@@ -63,11 +62,11 @@ export default function App() {
       defaultEdgeColor: "#999",
       // Thick edges are easier to click
       nodeReducer: (node, data) =>
-        node === source() ? { ...data, size: data.size * 1.6 } : data,
+        node === source() ? { ...data, size: data.size * 1.5 } : data,
       edgeReducer: (edge, data) =>
         edge === selectedEdge()
-          ? { ...data, color: "#e11", size: 6 }
-          : { ...data, size: 4 },
+          ? { ...data, color: "#e11", size: 4 }
+          : { ...data, size: 3 },
     });
 
     // Ctrl (or Cmd) + drag from a node starts an edge
@@ -103,8 +102,6 @@ export default function App() {
       sigma.refresh();
     });
 
-    relayout();
-
     onCleanup(() => {
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("keydown", onKeyDown);
@@ -113,7 +110,7 @@ export default function App() {
   });
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: "100vh" }}>
+    <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
       <div style={{ padding: "8px", font: "14px sans-serif" }}>
         Ctrl+drag from a node to another node: add edge / click an edge, then
         Delete: remove edge / edges: {edgeCount()}
@@ -121,7 +118,8 @@ export default function App() {
           Delete selected edge
         </button>
       </div>
-      <div ref={container} style={{ flex: "1" }} />
+      {/* Sigma needs a container with an explicit, non-zero size */}
+      <div ref={container} style={{ flex: "1", "min-height": "0", position: "relative" }} />
     </div>
   );
 }
