@@ -19,6 +19,8 @@ export default function App() {
   graph.import(data);
   // Remember the original node sizes so the selection highlight can scale them
   graph.updateEachNodeAttributes((_, attr) => ({ ...attr, baseSize: attr.size }));
+  // Remember the original edge weights; "size" is overwritten when drawing
+  graph.updateEachEdgeAttributes((_, attr) => ({ ...attr, weight: attr.size }));
   setEdgeCount(graph.size);
 
   const deleteSelectedEdge = () => {
@@ -85,7 +87,7 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
 
     // Push selection state into node/edge attributes (sizes are in pixels).
-    // Thick edges are easier to click.
+    // Thick edges are easier to click, and thickness reflects the edge weight.
     createEffect(() => {
       edgeCount(); // re-run when edges are added or removed
       graph.forEachNode((node) => {
@@ -95,8 +97,10 @@ export default function App() {
       });
       graph.forEachEdge((edge) => {
         const selected = edge === selectedEdge();
+        // Thickness grows with the weight (square root keeps heavy edges from dominating)
+        const width = 2 + Math.sqrt(graph.getEdgeAttribute(edge, "weight"));
         graph.mergeEdgeAttributes(edge, {
-          size: selected ? 6 : 4,
+          size: selected ? width + 2 : width,
           color: selected ? "#e11" : "#999",
         });
       });
