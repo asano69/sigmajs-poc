@@ -1,5 +1,5 @@
 // src/App.tsx
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import Graph from "graphology";
 import Sigma, { DEFAULT_STYLES } from "sigma";
 import { extremityArrow, layerFill, layerPlain, pathLine } from "sigma/rendering";
@@ -18,6 +18,9 @@ export default function App() {
   const [source, setSource] = createSignal<string | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
   const [selectedNode, setSelectedNode] = createSignal<string | null>(null);
+  // Start (source node) and end (mouse pointer) of the preview arrow, in container pixels
+  const [origin, setOrigin] = createSignal<{ x: number; y: number } | null>(null);
+  const [pointer, setPointer] = createSignal<{ x: number; y: number } | null>(null);
   const [edgeCount, setEdgeCount] = createSignal(0);
 
   // Initial nodes are placed on a circle so they never overlap
@@ -27,7 +30,7 @@ export default function App() {
       label: `Node ${i}`,
       x: Math.cos(angle),
       y: Math.sin(angle),
-      size: 8,
+      size: 10,
       color: randomColor(),
     });
   }
@@ -93,6 +96,9 @@ export default function App() {
         console.log("downNode with ctrl", node);
         setSource(node);
         sigma.getCamera().enabled = false; // do not pan the camera while dragging an edge
+        // The camera is frozen while dragging, so the origin stays valid
+        setOrigin(sigma.graphToViewport(graph.getNodeAttributes(node)));
+        setPointer({ x: event.x, y: event.y });
         preventSigmaDefault(); // do not drag the node itself
       }
     });
@@ -111,6 +117,10 @@ export default function App() {
       setSelectedNode(null);
     });
 
+    sigma.on("moveBody", ({ event }) => {
+      if (source()) setPointer({ x: event.x, y: event.y });
+    });
+
     // Releasing the mouse over another node completes the edge
     sigma.on("upNode", ({ node }) => {
       const from = source();
@@ -121,6 +131,8 @@ export default function App() {
     const onMouseUp = () =>
       setTimeout(() => {
         setSource(null);
+        setOrigin(null);
+        setPointer(null);
         sigma.getCamera().enabled = true;
       });
     const onKeyDown = (e: KeyboardEvent) => {
@@ -135,7 +147,7 @@ export default function App() {
       edgeCount(); // re-run when edges are added or removed
       graph.forEachNode((node) => {
         const active = node === source() || node === selectedNode();
-        graph.setNodeAttribute(node, "size", active ? 12 : 8);
+        graph.setNodeAttribute(node, "size", active ? 35 : 30);
       });
       graph.forEachEdge((edge) => {
         const selected = edge === selectedEdge();
@@ -163,8 +175,38 @@ export default function App() {
           Delete selected edge
         </button>
       </div>
-      {/* Sigma needs a container with an explicit, non-zero size */}
-      <div ref={container} style={{ flex: "1", "min-height": "0", position: "relative" }} />
+      <div style={{ flex: "1", "min-height": "0", position: "relative" }}>
+        {/* Sigma needs a container with an explicit, non-zero size */}
+        <div ref={container} style={{ width: "100%", height: "100%" }} />
+        {/* Preview arrow while dragging; pointer-events: none keeps it from blocking Sigma */}
+        <Show when={origin() && pointer()}>
+          <svg
+            style={{
+              position: "absolute",
+              inset: "0",
+              width: "100%",
+              height: "100%",
+              "pointer-events": "none",
+            }}
+          >
+            <defs>
+              <marker id="preview-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+                <path d="M0,0 L10,5 L0,10 z" fill="#999" />
+              </marker>
+            </defs>
+            <line
+              x1={origin()!.x}
+              y1={origin()!.y}
+              x2={pointer()!.x}
+              y2={pointer()!.y}
+              stroke="#999"
+              stroke-width="3"
+              opacity="0.5"
+              marker-end="url(#preview-arrow)"
+            />
+          </svg>
+        </Show>
+      </div>
     </div>
   );
 }
