@@ -4,12 +4,7 @@ import Graph from "graphology";
 import Sigma, { DEFAULT_STYLES } from "sigma";
 import { extremityArrow, layerFill, layerPlain, pathLine } from "sigma/rendering";
 import ForceSupervisor from "graphology-layout-force/worker";
-
-const NODE_COUNT = 10;
-const EDGE_COUNT = 20;
-
-const randomColor = () =>
-  "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
+import data from "../data.json";
 
 export default function App() {
   let container!: HTMLDivElement;
@@ -20,24 +15,10 @@ export default function App() {
   const [selectedNode, setSelectedNode] = createSignal<string | null>(null);
   const [edgeCount, setEdgeCount] = createSignal(0);
 
-  // Initial nodes are placed on a circle so they never overlap
-  for (let i = 0; i < NODE_COUNT; i++) {
-    const angle = (2 * Math.PI * i) / NODE_COUNT;
-    graph.addNode(`n${i}`, {
-      label: `Node ${i}`,
-      x: Math.cos(angle),
-      y: Math.sin(angle),
-      size: 10,
-      color: randomColor(),
-    });
-  }
-
-  // Add random edges between distinct nodes (mergeDirectedEdge ignores duplicates)
-  for (let i = 0; i < EDGE_COUNT; i++) {
-    const from = `n${Math.floor(Math.random() * NODE_COUNT)}`;
-    const to = `n${Math.floor(Math.random() * NODE_COUNT)}`;
-    if (from !== to) graph.mergeDirectedEdge(from, to);
-  }
+  // Load the fixture (nodes, edges, colors and positions) from data.json
+  graph.import(data);
+  // Remember the original node sizes so the selection highlight can scale them
+  graph.updateEachNodeAttributes((_, attr) => ({ ...attr, baseSize: attr.size }));
   setEdgeCount(graph.size);
 
   const deleteSelectedEdge = () => {
@@ -109,7 +90,8 @@ export default function App() {
       edgeCount(); // re-run when edges are added or removed
       graph.forEachNode((node) => {
         const active = node === selectedNode();
-        graph.setNodeAttribute(node, "size", active ? 35 : 30);
+        const base = graph.getNodeAttribute(node, "baseSize");
+        graph.setNodeAttribute(node, "size", active ? base * 1.3 : base);
       });
       graph.forEachEdge((edge) => {
         const selected = edge === selectedEdge();
