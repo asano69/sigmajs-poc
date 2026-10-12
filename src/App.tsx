@@ -1,11 +1,12 @@
 // src/App.tsx
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import Graph from "graphology";
 import Sigma, { DEFAULT_STYLES } from "sigma";
 import { extremityArrow, layerFill, layerPlain, pathLine } from "sigma/rendering";
-import forceAtlas2 from "graphology-layout-forceatlas2";
+import ForceSupervisor from "graphology-layout-force/worker";
 
 const NODE_COUNT = 10;
+const EDGE_COUNT = 20;
 
 const randomColor = () =>
   "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
@@ -15,12 +16,8 @@ export default function App() {
   let sigma!: Sigma;
 
   const graph = new Graph({ type: "directed" });
-  const [source, setSource] = createSignal<string | null>(null);
   const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
   const [selectedNode, setSelectedNode] = createSignal<string | null>(null);
-  // Start (source node) and end (mouse pointer) of the preview arrow, in container pixels
-  const [origin, setOrigin] = createSignal<{ x: number; y: number } | null>(null);
-  const [pointer, setPointer] = createSignal<{ x: number; y: number } | null>(null);
   const [edgeCount, setEdgeCount] = createSignal(0);
 
   // Initial nodes are placed on a circle so they never overlap
@@ -35,28 +32,13 @@ export default function App() {
     });
   }
 
-  // Compute a force-directed layout and write the positions into the graph
-  const relayout = () => {
-    // Few iterations and fixed forces keep nodes from collapsing into one blob
-    forceAtlas2.assign(graph, {
-      iterations: 100,
-      settings: {
-        ...forceAtlas2.inferSettings(graph),
-        gravity: 1,
-        scalingRatio: 10,
-        slowDown: 10,
-      },
-    });
-  };
-
-  const addEdge = (from: string, to: string) => {
-    console.log("addEdge", from, to);
-    if (from === to || graph.hasDirectedEdge(from, to)) return;
-    graph.addDirectedEdge(from, to);
-    console.log("edge added, size =", graph.size);
-    setEdgeCount(graph.size);
-    relayout();
-  };
+  // Add random edges between distinct nodes (mergeDirectedEdge ignores duplicates)
+  for (let i = 0; i < EDGE_COUNT; i++) {
+    const from = `n${Math.floor(Math.random() * NODE_COUNT)}`;
+    const to = `n${Math.floor(Math.random() * NODE_COUNT)}`;
+    if (from !== to) graph.mergeDirectedEdge(from, to);
+  }
+  setEdgeCount(graph.size);
 
   const deleteSelectedEdge = () => {
     const edge = selectedEdge();
@@ -64,7 +46,6 @@ export default function App() {
     graph.dropEdge(edge);
     setSelectedEdge(null);
     setEdgeCount(graph.size);
-    relayout();
   };
 
   onMount(() => {
@@ -79,28 +60,21 @@ export default function App() {
         },
       },
       styles: {
-        nodes: [DEFAULT_STYLES.nodes],
+        nodes: [
+          DEFAULT_STYLES.nodes,
+          { cursor: "grab" },
+          { whenState: "isDragged", then: { cursor: "grabbing" } },
+        ],
         edges: [DEFAULT_STYLES.edges, { head: "arrow" }],
       },
       settings: {
         enableEdgeEvents: true, // required for clickEdge
+        enableNodeDrag: true, // drag nodes with the mouse
+        // Rescale only once, otherwise the view jumps around while a node is dragged
+        autoRescale: "once",
         // v4 defaults to "positions", which would read size 8 in graph coordinates (huge nodes)
         itemSizesReference: "screen",
       },
-    });
-
-    // Ctrl (or Cmd) + drag from a node starts an edge
-    sigma.on("downNode", ({ node, event, preventSigmaDefault }) => {
-      const original = event.original as MouseEvent;
-      if (original.ctrlKey || original.metaKey) {
-        console.log("downNode with ctrl", node);
-        setSource(node);
-        sigma.getCamera().enabled = false; // do not pan the camera while dragging an edge
-        // The camera is frozen while dragging, so the origin stays valid
-        setOrigin(sigma.graphToViewport(graph.getNodeAttributes(node)));
-        setPointer({ x: event.x, y: event.y });
-        preventSigmaDefault(); // do not drag the node itself
-      }
     });
 
     // Selecting a node and selecting an edge are mutually exclusive
@@ -117,28 +91,16 @@ export default function App() {
       setSelectedNode(null);
     });
 
-    sigma.on("moveBody", ({ event }) => {
-      if (source()) setPointer({ x: event.x, y: event.y });
+    // Live force layout: dragged nodes are pinned, and the layout resumes on release
+    const layout = new ForceSupervisor(graph, {
+      settings: { repulsion: 0.2, attraction: 0.0002 },
+      isNodeFixed: (node) => sigma.getNodeState(node).isDragged,
     });
+    layout.start();
 
-    // Releasing the mouse over another node completes the edge
-    sigma.on("upNode", ({ node }) => {
-      const from = source();
-      console.log("upNode", node, "source =", from);
-      if (from) addEdge(from, node);
-    });
-    // Deferred so it runs after upNode, wherever the mouse is released
-    const onMouseUp = () =>
-      setTimeout(() => {
-        setSource(null);
-        setOrigin(null);
-        setPointer(null);
-        sigma.getCamera().enabled = true;
-      });
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Delete" || e.key === "Backspace") deleteSelectedEdge();
     };
-    window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("keydown", onKeyDown);
 
     // Push selection state into node/edge attributes (sizes are in pixels).
@@ -146,7 +108,7 @@ export default function App() {
     createEffect(() => {
       edgeCount(); // re-run when edges are added or removed
       graph.forEachNode((node) => {
-        const active = node === source() || node === selectedNode();
+        const active = node === selectedNode();
         graph.setNodeAttribute(node, "size", active ? 35 : 30);
       });
       graph.forEachEdge((edge) => {
@@ -160,8 +122,8 @@ export default function App() {
     });
 
     onCleanup(() => {
-      window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("keydown", onKeyDown);
+      layout.kill();
       sigma.kill();
     });
   });
@@ -169,8 +131,8 @@ export default function App() {
   return (
     <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
       <div style={{ padding: "8px", font: "14px sans-serif" }}>
-        Ctrl+drag from a node to another node: add edge / click an edge, then
-        Delete: remove edge / edges: {edgeCount()}
+        Drag a node to move it / click an edge, then Delete: remove edge /
+        edges: {edgeCount()}
         <button onClick={deleteSelectedEdge} disabled={!selectedEdge()} style={{ "margin-left": "8px" }}>
           Delete selected edge
         </button>
@@ -178,34 +140,6 @@ export default function App() {
       <div style={{ flex: "1", "min-height": "0", position: "relative" }}>
         {/* Sigma needs a container with an explicit, non-zero size */}
         <div ref={container} style={{ width: "100%", height: "100%" }} />
-        {/* Preview arrow while dragging; pointer-events: none keeps it from blocking Sigma */}
-        <Show when={origin() && pointer()}>
-          <svg
-            style={{
-              position: "absolute",
-              inset: "0",
-              width: "100%",
-              height: "100%",
-              "pointer-events": "none",
-            }}
-          >
-            <defs>
-              <marker id="preview-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-                <path d="M0,0 L10,5 L0,10 z" fill="#999" />
-              </marker>
-            </defs>
-            <line
-              x1={origin()!.x}
-              y1={origin()!.y}
-              x2={pointer()!.x}
-              y2={pointer()!.y}
-              stroke="#999"
-              stroke-width="3"
-              opacity="0.5"
-              marker-end="url(#preview-arrow)"
-            />
-          </svg>
-        </Show>
       </div>
     </div>
   );
