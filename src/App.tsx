@@ -47,8 +47,10 @@ export default function App() {
   };
 
   const addEdge = (from: string, to: string) => {
+    console.log("addEdge", from, to);
     if (from === to || graph.hasDirectedEdge(from, to)) return;
     graph.addDirectedEdge(from, to);
+    console.log("edge added, size =", graph.size);
     setEdgeCount(graph.size);
     relayout();
   };
@@ -60,24 +62,6 @@ export default function App() {
     setSelectedEdge(null);
     setEdgeCount(graph.size);
     relayout();
-  };
-
-  // Find the node nearest to the mouse pointer (within 20px), if any
-  const nodeAt = (e: MouseEvent): string | null => {
-    const rect = container.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    let best: string | null = null;
-    let bestDist = 20;
-    graph.forEachNode((node, attrs) => {
-      const p = sigma.graphToViewport({ x: attrs.x, y: attrs.y });
-      const d = Math.hypot(p.x - px, p.y - py);
-      if (d < bestDist) {
-        best = node;
-        bestDist = d;
-      }
-    });
-    return best;
   };
 
   onMount(() => {
@@ -106,8 +90,10 @@ export default function App() {
     sigma.on("downNode", ({ node, event, preventSigmaDefault }) => {
       const original = event.original as MouseEvent;
       if (original.ctrlKey || original.metaKey) {
+        console.log("downNode with ctrl", node);
         setSource(node);
-        preventSigmaDefault(); // do not pan the camera
+        sigma.getCamera().enabled = false; // do not pan the camera while dragging an edge
+        preventSigmaDefault(); // do not drag the node itself
       }
     });
 
@@ -126,13 +112,17 @@ export default function App() {
     });
 
     // Releasing the mouse over another node completes the edge
-    const onMouseUp = (e: MouseEvent) => {
+    sigma.on("upNode", ({ node }) => {
       const from = source();
-      if (!from) return;
-      const to = nodeAt(e);
-      if (to) addEdge(from, to);
-      setSource(null);
-    };
+      console.log("upNode", node, "source =", from);
+      if (from) addEdge(from, node);
+    });
+    // Deferred so it runs after upNode, wherever the mouse is released
+    const onMouseUp = () =>
+      setTimeout(() => {
+        setSource(null);
+        sigma.getCamera().enabled = true;
+      });
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Delete" || e.key === "Backspace") deleteSelectedEdge();
     };
